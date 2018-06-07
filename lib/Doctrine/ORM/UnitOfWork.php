@@ -2302,12 +2302,13 @@ class UnitOfWork implements PropertyChangedListener
 
         foreach ($associationMappings as $assoc) {
             $relatedEntities = $class->reflFields[$assoc['fieldName']]->getValue($entity);
-
+            $wasPersistent = false;
             switch (true) {
                 case ($relatedEntities instanceof PersistentCollection):
                     // Unwrap so that foreach() does not initialize
                     $relatedEntities = $relatedEntities->unwrap();
                     // break; is commented intentionally!
+                    $wasPersistent = true;
 
                 case ($relatedEntities instanceof Collection):
                 case (is_array($relatedEntities)):
@@ -2322,7 +2323,16 @@ class UnitOfWork implements PropertyChangedListener
                     foreach ($relatedEntities as $relatedEntity) {
                         $this->doPersist($relatedEntity, $visited);
                     }
-
+                    if (!$wasPersistent) {
+                        if (is_array($relatedEntities)) {
+                            $relatedEntities = new ArrayCollection($relatedEntities);
+                        }
+                        $targetClass = $this->em->getClassMetadata($assoc['targetEntity']);
+                        $persistentCollection = new PersistentCollection($this->em, $targetClass, $relatedEntities);
+                        $persistentCollection->setOwner($entity, $assoc);
+                        $persistentCollection->setInitialized(true);
+                        $class->reflFields[$assoc['fieldName']]->setValue($entity, $persistentCollection);
+                    }
                     break;
 
                 case ($relatedEntities !== null):
